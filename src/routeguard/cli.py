@@ -7,6 +7,7 @@ import sys
 from .checks import check_bgp_peers, check_ospf_neighbors
 from .frr import FRRClient, FRRCommandError
 from .inventory import EXPECTED_BGP_PEERS, EXPECTED_OSPF_NEIGHBORS, ROUTERS
+from .models import CheckResult
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,9 +74,16 @@ def _check(router: str, as_json: bool) -> int:
     for name in routers:
         client = FRRClient(name)
         bgp = check_bgp_peers(client.bgp_peers(), EXPECTED_BGP_PEERS[name])
-        ospf = check_ospf_neighbors(
-            client.ospf_neighbors(), EXPECTED_OSPF_NEIGHBORS[name]
-        )
+        if EXPECTED_OSPF_NEIGHBORS[name]:
+            ospf = check_ospf_neighbors(
+                client.ospf_neighbors(), EXPECTED_OSPF_NEIGHBORS[name]
+            )
+        else:
+            ospf = CheckResult(
+                name="ospf-neighbors",
+                ok=True,
+                detail="OSPF is not part of this router's baseline",
+            )
         failed = failed or not bgp.ok or not ospf.ok
         output.append(
             {
