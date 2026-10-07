@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 
 from .baseline import collect_baseline, wait_for_baseline
 from .experiments import ExperimentPreconditionError, run_link_failure
@@ -195,10 +196,11 @@ def _experiment_link_failure(args: argparse.Namespace) -> int:
         interval_seconds=args.interval,
         probe_interval_seconds=args.probe_interval,
     )
-    payload = report_to_dict(report)
+    generated_at = datetime.now(timezone.utc)
+    payload = report_to_dict(report, generated_at=generated_at)
 
     if args.report:
-        written = write_report(report, args.report)
+        written = write_report(report, args.report, generated_at=generated_at)
     else:
         written = None
 
