@@ -1,5 +1,7 @@
 import subprocess
 
+import pytest
+
 from routeguard.reachability import (
     DockerPingProbe,
     ReachabilityTarget,
@@ -51,4 +53,4 @@ def test_reachability_summary_counts_success_and_loss():
     assert summary.samples == 3
     assert summary.successful == 2
     assert summary.failed == 1
-    assert summary.loss_percent == 100 / 3
+    assert summary.loss_percent == pytest.approx(100 / 3)
