@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 from .baseline import BaselineWait, RouterBaseline, collect_baseline, wait_for_baseline
 from .faults import DockerLinkController
+from .reachability import (
+    DockerPingProbe,
+    ReachabilitySummary,
+    ReachabilityTarget,
+    sample_reachability,
+)
 
 
 class ExperimentPreconditionError(RuntimeError):
@@ -20,6 +26,8 @@ class LinkFailureReport:
     recovered: bool
     recovery_attempts: int
     recovery_seconds: float
+    reachability: ReachabilitySummary
+    reachable_after_recovery: bool
 
 
 def failed_check_names(results: tuple[RouterBaseline, ...]) -> tuple[str, ...]:
@@ -34,18 +42,23 @@ def failed_check_names(results: tuple[RouterBaseline, ...]) -> tuple[str, ...]:
 def run_link_failure(
     link_name: str,
     *,
+    probe_target: ReachabilityTarget,
     hold_seconds: float = 5.0,
     recovery_timeout_seconds: float = 30.0,
     interval_seconds: float = 1.0,
+    probe_interval_seconds: float = 0.5,
     controller: DockerLinkController | None = None,
+    probe: DockerPingProbe | None = None,
     wait_fn: Callable[..., BaselineWait] = wait_for_baseline,
     collect_fn: Callable[..., tuple[RouterBaseline, ...]] = collect_baseline,
-    sleeper: Callable[[float], None] = time.sleep,
+    sample_fn: Callable[..., ReachabilitySummary] = sample_reachability,
 ) -> LinkFailureReport:
     if hold_seconds < 0:
         raise ValueError("hold_seconds must be non-negative")
 
     controller = controller or DockerLinkController()
+    probe = probe or DockerPingProbe()
+
     before = wait_fn(
         timeout_seconds=recovery_timeout_seconds,
         interval_seconds=interval_seconds,
@@ -54,10 +67,19 @@ def run_link_failure(
         raise ExperimentPreconditionError(
             "baseline is not healthy; refusing to inject a fault"
         )
+    if not probe.sample(probe_target):
+        raise ExperimentPreconditionError(
+            f"{probe_target.name} is unreachable before the fault; refusing to continue"
+        )
 
     controller.fail(link_name)
     try:
-        sleeper(hold_seconds)
+        reachability = sample_fn(
+            probe,
+            probe_target,
+            duration_seconds=hold_seconds,
+            interval_seconds=probe_interval_seconds,
+        )
         during = collect_fn()
     finally:
         controller.restore(link_name)
@@ -66,6 +88,8 @@ def run_link_failure(
         timeout_seconds=recovery_timeout_seconds,
         interval_seconds=interval_seconds,
     )
+    reachable_after_recovery = probe.sample(probe_target)
+
     return LinkFailureReport(
         link=link_name,
         hold_seconds=hold_seconds,
@@ -73,4 +97,6 @@ def run_link_failure(
         recovered=recovery.ok,
         recovery_attempts=recovery.attempts,
         recovery_seconds=recovery.elapsed_seconds,
+        reachability=reachability,
+        reachable_after_recovery=reachable_after_recovery,
     )
