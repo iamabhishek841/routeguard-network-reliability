@@ -38,13 +38,29 @@ routeguard check all
 routeguard snapshot dub1
 ```
 
-The checks intentionally fail on missing, unexpected, or non-established peers. I want failures to be explicit before adding automatic recovery logic.
+The checks intentionally fail on missing, unexpected, or non-established peers. A bounded wait is also available because the first real lab run showed that checking immediately after deployment can catch OSPF and iBGP while they are still converging:
 
-## Direction
+```bash
+routeguard check all --wait 30
+```
 
-The next step is not adding more protocols. It is breaking this network in controlled ways: external link loss, BGP session loss, internal OSPF failure, and bad route advertisement. For each case I want to record detection time, route convergence, affected prefixes, and whether traffic has a usable alternate path.
+## Failure experiments
 
-That data will drive the monitoring and remediation pieces instead of starting with a dashboard and inventing metrics afterwards.
+The first failure experiment takes a named lab link down on both endpoints, samples the resulting control-plane failures, restores the link in a `finally` path, and waits for the original baseline to recover.
+
+```bash
+routeguard experiment link-failure core1-dub1 --hold 5
+```
+
+The command refuses to inject a fault if the lab is already unhealthy or if the selected routed probe is unreachable before the experiment starts.
+
+During the fault, RouteGuard samples an end-to-end routed path as well as the control-plane baseline. The default probe sends sourced ICMP traffic from a Dublin service prefix to a London service prefix:
+
+```bash
+routeguard experiment link-failure core1-dub1 --hold 5 --probe dub1-to-lon1
+```
+
+The router loopbacks used for OSPF and iBGP are deliberately separate from the service prefixes used for BGP advertisement and traffic probes. That separation came from the first live failure test, where reusing the router /32 as the payload prefix created a self-referential next-hop condition on the alternate site router. The report keeps control-plane recovery separate from observed traffic impact, and a final probe is run after the baseline recovers.
 
 ## Requirements
 
