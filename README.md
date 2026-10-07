@@ -52,9 +52,15 @@ The first failure experiment takes a named lab link down on both endpoints, samp
 routeguard experiment link-failure core1-dub1 --hold 5
 ```
 
-The command refuses to inject a fault if the lab is already unhealthy. Recovery time here means the time until the expected BGP/OSPF baseline is healthy again; it is not yet a packet-loss or end-to-end traffic convergence measurement.
+The command refuses to inject a fault if the lab is already unhealthy or if the selected routed probe is unreachable before the experiment starts.
 
-The next step is to add reachability sampling around the same experiment so control-plane recovery can be compared with actual traffic impact, rather than assuming the two are equivalent.
+During the fault, RouteGuard samples an end-to-end routed path as well as the control-plane baseline. The default probe sends sourced ICMP traffic from the Dublin loopback to the London loopback:
+
+```bash
+routeguard experiment link-failure core1-dub1 --hold 5 --probe dub1-to-lon1
+```
+
+The report keeps the two signals separate: BGP/OSPF recovery time describes the control plane, while the probe summary reports whether routed traffic was actually interrupted during the failure window. A final probe is run after the baseline recovers.
 
 ## Requirements
 
