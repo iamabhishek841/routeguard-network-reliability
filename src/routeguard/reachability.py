@@ -15,10 +15,23 @@ class ReachabilityTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class ReachabilitySample:
+    elapsed_seconds: float
+    reachable: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ReachabilitySummary:
     target: ReachabilityTarget
-    samples: int
-    successful: int
+    timeline: tuple[ReachabilitySample, ...]
+
+    @property
+    def samples(self) -> int:
+        return len(self.timeline)
+
+    @property
+    def successful(self) -> int:
+        return sum(sample.reachable for sample in self.timeline)
 
     @property
     def failed(self) -> int:
@@ -29,6 +42,20 @@ class ReachabilitySummary:
         if self.samples == 0:
             return 0.0
         return (self.failed / self.samples) * 100.0
+
+    @property
+    def first_failure_seconds(self) -> float | None:
+        for sample in self.timeline:
+            if not sample.reachable:
+                return sample.elapsed_seconds
+        return None
+
+    @property
+    def last_failure_seconds(self) -> float | None:
+        for sample in reversed(self.timeline):
+            if not sample.reachable:
+                return sample.elapsed_seconds
+        return None
 
 
 REACHABILITY_TARGETS: dict[str, ReachabilityTarget] = {
@@ -108,23 +135,24 @@ def sample_reachability(
         raise ValueError("interval_seconds must be positive")
 
     start = clock()
-    deadline = start + duration_seconds
-    samples = 0
-    successful = 0
+    timeline: list[ReachabilitySample] = []
 
     while True:
-        samples += 1
-        if probe.sample(target):
-            successful += 1
+        elapsed = clock() - start
+        timeline.append(
+            ReachabilitySample(
+                elapsed_seconds=elapsed,
+                reachable=probe.sample(target),
+            )
+        )
 
-        now = clock()
-        if now >= deadline:
+        elapsed = clock() - start
+        if elapsed >= duration_seconds:
             break
 
-        sleeper(min(interval_seconds, deadline - now))
+        sleeper(min(interval_seconds, duration_seconds - elapsed))
 
     return ReachabilitySummary(
         target=target,
-        samples=samples,
-        successful=successful,
+        timeline=tuple(timeline),
     )
