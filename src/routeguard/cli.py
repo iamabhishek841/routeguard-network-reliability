@@ -4,10 +4,9 @@ import argparse
 import json
 import sys
 
-from .checks import check_bgp_peers, check_ospf_neighbors
+from .baseline import collect_baseline, wait_for_baseline
 from .frr import FRRClient, FRRCommandError
-from .inventory import EXPECTED_BGP_PEERS, EXPECTED_OSPF_NEIGHBORS, ROUTERS
-from .models import CheckResult
+from .inventory import ROUTERS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +18,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument("router", choices=(*ROUTERS, "all"), default="all", nargs="?")
     check.add_argument("--json", action="store_true", dest="as_json")
+    check.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="retry until the baseline is healthy or the timeout expires",
+    )
+    check.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        metavar="SECONDS",
+        help="poll interval used with --wait (default: 1)",
+    )
 
     snapshot = sub.add_parser(
         "snapshot", help="print peer state collected from one router"
@@ -34,8 +47,8 @@ def main() -> int:
     try:
         if args.command == "snapshot":
             return _snapshot(args.router)
-        return _check(args.router, args.as_json)
-    except FRRCommandError as exc:
+        return _check(args.router, args.as_json, args.wait, args.interval)
+    except (FRRCommandError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -66,38 +79,42 @@ def _snapshot(router: str) -> int:
     return 0
 
 
-def _check(router: str, as_json: bool) -> int:
+def _check(router: str, as_json: bool, wait: float, interval: float) -> int:
     routers = ROUTERS if router == "all" else (router,)
-    output: list[dict[str, object]] = []
-    failed = False
 
-    for name in routers:
-        client = FRRClient(name)
-        bgp = check_bgp_peers(client.bgp_peers(), EXPECTED_BGP_PEERS[name])
-        if EXPECTED_OSPF_NEIGHBORS[name]:
-            ospf = check_ospf_neighbors(
-                client.ospf_neighbors(), EXPECTED_OSPF_NEIGHBORS[name]
-            )
-        else:
-            ospf = CheckResult(
-                name="ospf-neighbors",
-                ok=True,
-                detail="OSPF is not part of this router's baseline",
-            )
-        failed = failed or not bgp.ok or not ospf.ok
-        output.append(
-            {
-                "router": name,
-                "checks": [
-                    {"name": bgp.name, "ok": bgp.ok, "detail": bgp.detail},
-                    {"name": ospf.name, "ok": ospf.ok, "detail": ospf.detail},
-                ],
-            }
+    if wait > 0:
+        waited = wait_for_baseline(
+            routers=routers,
+            timeout_seconds=wait,
+            interval_seconds=interval,
         )
+        results = waited.results
+    else:
+        waited = None
+        results = collect_baseline(routers)
+
+    output = [
+        {
+            "router": result.router,
+            "checks": [
+                {"name": check.name, "ok": check.ok, "detail": check.detail}
+                for check in result.checks
+            ],
+        }
+        for result in results
+    ]
+    failed = any(not result.ok for result in results)
 
     if as_json:
         print(json.dumps(output, indent=2))
     else:
+        if waited is not None:
+            state = "ready" if waited.ok else "not ready"
+            print(
+                f"baseline {state} after {waited.attempts} checks "
+                f"({waited.elapsed_seconds:.2f}s)"
+            )
+
         for router_result in output:
             print(router_result["router"])
             for result in router_result["checks"]:
