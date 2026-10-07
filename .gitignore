@@ -6,3 +6,6 @@ __pycache__/
 
 # containerlab creates runtime state next to the topology
 lab/clab-routeguard/
+
+# local experiment evidence
+reports/
