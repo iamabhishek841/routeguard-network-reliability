@@ -38,13 +38,23 @@ routeguard check all
 routeguard snapshot dub1
 ```
 
-The checks intentionally fail on missing, unexpected, or non-established peers. I want failures to be explicit before adding automatic recovery logic.
+The checks intentionally fail on missing, unexpected, or non-established peers. A bounded wait is also available because the first real lab run showed that checking immediately after deployment can catch OSPF and iBGP while they are still converging:
 
-## Direction
+```bash
+routeguard check all --wait 30
+```
 
-The next step is not adding more protocols. It is breaking this network in controlled ways: external link loss, BGP session loss, internal OSPF failure, and bad route advertisement. For each case I want to record detection time, route convergence, affected prefixes, and whether traffic has a usable alternate path.
+## Failure experiments
 
-That data will drive the monitoring and remediation pieces instead of starting with a dashboard and inventing metrics afterwards.
+The first failure experiment takes a named lab link down on both endpoints, samples the resulting control-plane failures, restores the link in a `finally` path, and waits for the original baseline to recover.
+
+```bash
+routeguard experiment link-failure core1-dub1 --hold 5
+```
+
+The command refuses to inject a fault if the lab is already unhealthy. Recovery time here means the time until the expected BGP/OSPF baseline is healthy again; it is not yet a packet-loss or end-to-end traffic convergence measurement.
+
+The next step is to add reachability sampling around the same experiment so control-plane recovery can be compared with actual traffic impact, rather than assuming the two are equivalent.
 
 ## Requirements
 
