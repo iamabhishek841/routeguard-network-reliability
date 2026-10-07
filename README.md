@@ -54,13 +54,13 @@ routeguard experiment link-failure core1-dub1 --hold 5
 
 The command refuses to inject a fault if the lab is already unhealthy or if the selected routed probe is unreachable before the experiment starts.
 
-During the fault, RouteGuard samples an end-to-end routed path as well as the control-plane baseline. The default probe sends sourced ICMP traffic from the Dublin loopback to the London loopback:
+During the fault, RouteGuard samples an end-to-end routed path as well as the control-plane baseline. The default probe sends sourced ICMP traffic from a Dublin service prefix to a London service prefix:
 
 ```bash
 routeguard experiment link-failure core1-dub1 --hold 5 --probe dub1-to-lon1
 ```
 
-The report keeps the two signals separate: BGP/OSPF recovery time describes the control plane, while the probe summary reports whether routed traffic was actually interrupted during the failure window. A final probe is run after the baseline recovers.
+The router loopbacks used for OSPF and iBGP are deliberately separate from the service prefixes used for BGP advertisement and traffic probes. That separation came from the first live failure test, where reusing the router /32 as the payload prefix created a self-referential next-hop condition on the alternate site router. The report keeps control-plane recovery separate from observed traffic impact, and a final probe is run after the baseline recovers.
 
 ## Requirements
 
