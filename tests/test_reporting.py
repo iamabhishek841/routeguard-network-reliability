@@ -1,4 +1,6 @@
 import json
+
+import pytest
 from datetime import datetime, timezone
 
 from routeguard.experiments import LinkFailureReport
@@ -50,7 +52,7 @@ def test_report_payload_keeps_control_plane_and_traffic_separate():
         "core1:bgp-peers",
         "dub1:bgp-peers",
     ]
-    assert payload["reachability"]["loss_percent"] == 100 / 3
+    assert payload["reachability"]["loss_percent"] == pytest.approx(100 / 3)
     assert payload["reachability"]["first_failure_seconds"] == 0.5
     assert payload["reachability"]["last_failure_seconds"] == 0.5
     assert len(payload["reachability"]["timeline"]) == 3
