@@ -12,8 +12,8 @@ from routeguard.reachability import (
 TARGET = ReachabilityTarget(
     name="test-path",
     router="dub1",
-    source="10.100.0.1",
-    target="10.200.0.1",
+    source="10.110.0.1",
+    target="10.210.0.1",
 )
 
 
