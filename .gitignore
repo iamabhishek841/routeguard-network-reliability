@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# containerlab creates runtime state next to the topology
+lab/clab-routeguard/

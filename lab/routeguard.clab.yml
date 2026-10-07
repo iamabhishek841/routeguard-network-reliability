@@ -1,0 +1,49 @@
+name: routeguard
+
+topology:
+  nodes:
+    core1:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - configs/core1/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+    core2:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - configs/core2/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+    dub1:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - configs/dub1/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+    dub2:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - configs/dub2/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+    lon1:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - configs/lon1/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+    lon2:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      binds:
+        - configs/lon2/frr.conf:/etc/frr/frr.conf
+        - configs/daemons:/etc/frr/daemons
+
+  links:
+    - endpoints: ["core1:eth1", "core2:eth1"]
+    - endpoints: ["core1:eth2", "dub1:eth1"]
+    - endpoints: ["core2:eth2", "dub2:eth1"]
+    - endpoints: ["core1:eth3", "lon1:eth1"]
+    - endpoints: ["core2:eth3", "lon2:eth1"]
+    - endpoints: ["dub1:eth2", "dub2:eth2"]
+    - endpoints: ["lon1:eth2", "lon2:eth2"]
