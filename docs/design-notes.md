@@ -12,6 +12,8 @@ Each site has two independent exits to the backbone. The site pair runs OSPF on 
 
 That gives me a useful failure case later: if a site loses one external BGP session, the affected router should still be able to use the other site router as its path out. It also means I can break OSPF separately and see whether the iBGP session over loopbacks follows it.
 
+The first live failure test exposed an important design mistake: I was using the same /32 addresses as both iBGP router IDs/update-sources and as the BGP payload prefixes used for traffic tests. When `core1-dub1` failed, `dub2` could still reach `dub1`'s router loopback through OSPF, but the iBGP path for that same /32 was marked invalid and never propagated upstream. I split those roles instead of hiding the failure: 10.100/10.200 loopbacks are infrastructure for OSPF+iBGP, while 10.110/10.210 are the prefixes advertised and probed end to end.
+
 ## Addressing
 
 | Link / role | Prefix |
@@ -23,8 +25,10 @@ That gives me a useful failure case later: if a site loses one external BGP sess
 | core2-lon2 | 10.0.21.0/31 |
 | Dublin internal | 10.1.0.0/31 |
 | London internal | 10.2.0.0/31 |
-| Dublin loopbacks | 10.100.0.1/32, 10.100.0.2/32 |
-| London loopbacks | 10.200.0.1/32, 10.200.0.2/32 |
+| Dublin router loopbacks | 10.100.0.1/32, 10.100.0.2/32 |
+| Dublin service prefixes | 10.110.0.1/32, 10.110.0.2/32 |
+| London router loopbacks | 10.200.0.1/32, 10.200.0.2/32 |
+| London service prefixes | 10.210.0.1/32, 10.210.0.2/32 |
 | Core loopbacks | 10.255.0.1/32, 10.255.0.2/32 |
 
 ## Things I am deliberately not adding yet
