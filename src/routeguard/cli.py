@@ -9,6 +9,7 @@ from .experiments import ExperimentPreconditionError, run_link_failure
 from .faults import LAB_LINKS, FaultCommandError
 from .frr import FRRClient, FRRCommandError
 from .inventory import ROUTERS
+from .reachability import REACHABILITY_TARGETS, PingCommandError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,6 +71,19 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SECONDS",
         help="baseline polling interval (default: 1)",
     )
+    link_failure.add_argument(
+        "--probe",
+        choices=tuple(sorted(REACHABILITY_TARGETS)),
+        default="dub1-to-lon1",
+        help="routed reachability path to sample during the fault",
+    )
+    link_failure.add_argument(
+        "--probe-interval",
+        type=float,
+        default=0.5,
+        metavar="SECONDS",
+        help="reachability sampling interval while the link is down (default: 0.5)",
+    )
     link_failure.add_argument("--json", action="store_true", dest="as_json")
 
     return parser
@@ -84,7 +98,13 @@ def main() -> int:
         if args.command == "experiment":
             return _experiment_link_failure(args)
         return _check(args.router, args.as_json, args.wait, args.interval)
-    except (FRRCommandError, FaultCommandError, ExperimentPreconditionError, ValueError) as exc:
+    except (
+        FRRCommandError,
+        FaultCommandError,
+        PingCommandError,
+        ExperimentPreconditionError,
+        ValueError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -163,9 +183,11 @@ def _check(router: str, as_json: bool, wait: float, interval: float) -> int:
 def _experiment_link_failure(args: argparse.Namespace) -> int:
     report = run_link_failure(
         args.link,
+        probe_target=REACHABILITY_TARGETS[args.probe],
         hold_seconds=args.hold,
         recovery_timeout_seconds=args.recovery_timeout,
         interval_seconds=args.interval,
+        probe_interval_seconds=args.probe_interval,
     )
     payload = {
         "link": report.link,
@@ -174,6 +196,14 @@ def _experiment_link_failure(args: argparse.Namespace) -> int:
         "recovered": report.recovered,
         "recovery_attempts": report.recovery_attempts,
         "recovery_seconds": report.recovery_seconds,
+        "reachability": {
+            "probe": report.reachability.target.name,
+            "samples": report.reachability.samples,
+            "successful": report.reachability.successful,
+            "failed": report.reachability.failed,
+            "loss_percent": report.reachability.loss_percent,
+            "reachable_after_recovery": report.reachable_after_recovery,
+        },
     }
 
     if args.as_json:
@@ -188,11 +218,18 @@ def _experiment_link_failure(args: argparse.Namespace) -> int:
         print(f"link: {report.link}")
         print(f"control-plane failures while down: {failures}")
         print(
+            f"reachability during fault: "
+            f"{report.reachability.successful}/{report.reachability.samples} successful "
+            f"({report.reachability.loss_percent:.1f}% loss)"
+        )
+        print(
             f"recovery: {recovery} after {report.recovery_attempts} checks "
             f"({report.recovery_seconds:.2f}s)"
         )
+        post = "PASS" if report.reachable_after_recovery else "FAIL"
+        print(f"reachability after recovery: {post}")
 
-    return 0 if report.recovered else 1
+    return 0 if report.recovered and report.reachable_after_recovery else 1
 
 
 if __name__ == "__main__":
