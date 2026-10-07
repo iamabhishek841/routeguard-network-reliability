@@ -1,14 +1,18 @@
 from routeguard.baseline import BaselineWait, RouterBaseline
-from routeguard.experiments import ExperimentPreconditionError, run_link_failure
+from routeguard.experiments import ExperimentPreconditionError, LinkFailureReport, run_link_failure
 from routeguard.models import CheckResult
-from routeguard.reachability import ReachabilitySummary, ReachabilityTarget
+from routeguard.reachability import (
+    ReachabilitySample,
+    ReachabilitySummary,
+    ReachabilityTarget,
+)
 
 
 TARGET = ReachabilityTarget(
     name="dub1-to-lon1",
     router="dub1",
-    source="10.100.0.1",
-    target="10.200.0.1",
+    source="10.110.0.1",
+    target="10.210.0.1",
 )
 
 
@@ -44,7 +48,17 @@ def healthy_wait():
     return BaselineWait(baseline, attempts=2, elapsed_seconds=1.0)
 
 
-def test_link_failure_restores_link_and_reports_recovery():
+def summary(*outcomes: bool) -> ReachabilitySummary:
+    return ReachabilitySummary(
+        TARGET,
+        tuple(
+            ReachabilitySample(index * 0.5, reachable)
+            for index, reachable in enumerate(outcomes)
+        ),
+    )
+
+
+def test_link_failure_restores_link_and_reports_control_plane_only_outcome():
     controller = FakeController()
     probe = FakeProbe([True, True])
     waits = [
@@ -62,8 +76,6 @@ def test_link_failure_restores_link_and_reports_recovery():
         ),
     )
 
-    summary = ReachabilitySummary(TARGET, samples=5, successful=5)
-
     report = run_link_failure(
         "core1-dub1",
         probe_target=TARGET,
@@ -71,7 +83,7 @@ def test_link_failure_restores_link_and_reports_recovery():
         probe=probe,
         wait_fn=wait_fn,
         collect_fn=lambda: during,
-        sample_fn=lambda *args, **kwargs: summary,
+        sample_fn=lambda *args, **kwargs: summary(True, True, True),
     )
 
     assert controller.events == [
@@ -84,6 +96,37 @@ def test_link_failure_restores_link_and_reports_recovery():
     assert report.recovery_seconds == 2.0
     assert report.reachability.loss_percent == 0.0
     assert report.reachable_after_recovery is True
+    assert report.outcome == "control-plane-only"
+
+
+def test_outcome_reports_traffic_impact_when_probe_samples_fail():
+    report = LinkFailureReport(
+        link="core1-dub1",
+        hold_seconds=5,
+        failed_checks_during_fault=("dub1:bgp-peers",),
+        recovered=True,
+        recovery_attempts=1,
+        recovery_seconds=1.0,
+        reachability=summary(True, False, True),
+        reachable_after_recovery=True,
+    )
+
+    assert report.outcome == "traffic-impact"
+
+
+def test_outcome_reports_recovery_failure_first():
+    report = LinkFailureReport(
+        link="core1-dub1",
+        hold_seconds=5,
+        failed_checks_during_fault=("dub1:bgp-peers",),
+        recovered=False,
+        recovery_attempts=10,
+        recovery_seconds=30.0,
+        reachability=summary(True, False),
+        reachable_after_recovery=False,
+    )
+
+    assert report.outcome == "recovery-failed"
 
 
 def test_unhealthy_baseline_refuses_to_inject_fault():

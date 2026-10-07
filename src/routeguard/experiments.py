@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -28,6 +27,16 @@ class LinkFailureReport:
     recovery_seconds: float
     reachability: ReachabilitySummary
     reachable_after_recovery: bool
+
+    @property
+    def outcome(self) -> str:
+        if not self.recovered or not self.reachable_after_recovery:
+            return "recovery-failed"
+        if self.reachability.failed:
+            return "traffic-impact"
+        if self.failed_checks_during_fault:
+            return "control-plane-only"
+        return "no-observed-impact"
 
 
 def failed_check_names(results: tuple[RouterBaseline, ...]) -> tuple[str, ...]:
