@@ -1,5 +1,7 @@
 # RouteGuard
 
+[![tests](https://github.com/iamabhishek841/routeguard-network-reliability/actions/workflows/tests.yml/badge.svg)](https://github.com/iamabhishek841/routeguard-network-reliability/actions/workflows/tests.yml)
+
 RouteGuard is a small network-reliability lab for answering a practical question: **when the control plane changes, can I tell what broke, whether traffic was affected, and whether the network recovered the way I expected?**
 
 It uses FRRouting and containerlab for the network and a small Python CLI for state collection, baseline checks, bounded fault injection, routed reachability sampling, and experiment reports. The topology is intentionally small enough to understand end to end while still having redundant paths and separate IGP/BGP failure modes.
