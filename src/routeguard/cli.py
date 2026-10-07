@@ -5,6 +5,8 @@ import json
 import sys
 
 from .baseline import collect_baseline, wait_for_baseline
+from .experiments import ExperimentPreconditionError, run_link_failure
+from .faults import LAB_LINKS, FaultCommandError
 from .frr import FRRClient, FRRCommandError
 from .inventory import ROUTERS
 
@@ -38,6 +40,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     snapshot.add_argument("router", choices=ROUTERS)
 
+    experiment = sub.add_parser(
+        "experiment", help="run a bounded failure experiment against the lab"
+    )
+    experiment_sub = experiment.add_subparsers(dest="experiment", required=True)
+    link_failure = experiment_sub.add_parser(
+        "link-failure",
+        help="take one lab link down, sample control-plane impact, then restore it",
+    )
+    link_failure.add_argument("link", choices=tuple(sorted(LAB_LINKS)))
+    link_failure.add_argument(
+        "--hold",
+        type=float,
+        default=5.0,
+        metavar="SECONDS",
+        help="time to keep the link down before sampling state (default: 5)",
+    )
+    link_failure.add_argument(
+        "--recovery-timeout",
+        type=float,
+        default=30.0,
+        metavar="SECONDS",
+        help="maximum time to wait for a healthy baseline after restore (default: 30)",
+    )
+    link_failure.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        metavar="SECONDS",
+        help="baseline polling interval (default: 1)",
+    )
+    link_failure.add_argument("--json", action="store_true", dest="as_json")
+
     return parser
 
 
@@ -47,8 +81,10 @@ def main() -> int:
     try:
         if args.command == "snapshot":
             return _snapshot(args.router)
+        if args.command == "experiment":
+            return _experiment_link_failure(args)
         return _check(args.router, args.as_json, args.wait, args.interval)
-    except (FRRCommandError, ValueError) as exc:
+    except (FRRCommandError, FaultCommandError, ExperimentPreconditionError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -122,6 +158,41 @@ def _check(router: str, as_json: bool, wait: float, interval: float) -> int:
                 print(f"  {marker:<4} {result['name']}: {result['detail']}")
 
     return 1 if failed else 0
+
+
+def _experiment_link_failure(args: argparse.Namespace) -> int:
+    report = run_link_failure(
+        args.link,
+        hold_seconds=args.hold,
+        recovery_timeout_seconds=args.recovery_timeout,
+        interval_seconds=args.interval,
+    )
+    payload = {
+        "link": report.link,
+        "hold_seconds": report.hold_seconds,
+        "failed_checks_during_fault": list(report.failed_checks_during_fault),
+        "recovered": report.recovered,
+        "recovery_attempts": report.recovery_attempts,
+        "recovery_seconds": report.recovery_seconds,
+    }
+
+    if args.as_json:
+        print(json.dumps(payload, indent=2))
+    else:
+        failures = (
+            ", ".join(report.failed_checks_during_fault)
+            if report.failed_checks_during_fault
+            else "none observed"
+        )
+        recovery = "PASS" if report.recovered else "FAIL"
+        print(f"link: {report.link}")
+        print(f"control-plane failures while down: {failures}")
+        print(
+            f"recovery: {recovery} after {report.recovery_attempts} checks "
+            f"({report.recovery_seconds:.2f}s)"
+        )
+
+    return 0 if report.recovered else 1
 
 
 if __name__ == "__main__":
