@@ -35,14 +35,14 @@ REACHABILITY_TARGETS: dict[str, ReachabilityTarget] = {
     "dub1-to-lon1": ReachabilityTarget(
         name="dub1-to-lon1",
         router="dub1",
-        source="10.100.0.1",
-        target="10.200.0.1",
+        source="10.110.0.1",
+        target="10.210.0.1",
     ),
     "lon1-to-dub1": ReachabilityTarget(
         name="lon1-to-dub1",
         router="lon1",
-        source="10.200.0.1",
-        target="10.100.0.1",
+        source="10.210.0.1",
+        target="10.110.0.1",
     ),
 }
 
