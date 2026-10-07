@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "routeguard"
-version = "0.1.0"
-description = "Small reliability checks for a containerized routed network lab"
+version = "0.2.0"
+description = "Network reliability lab for validating routing failures and recovery"
 requires-python = ">=3.11"
 dependencies = []
 
