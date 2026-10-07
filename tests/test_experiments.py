@@ -1,6 +1,15 @@
 from routeguard.baseline import BaselineWait, RouterBaseline
 from routeguard.experiments import ExperimentPreconditionError, run_link_failure
 from routeguard.models import CheckResult
+from routeguard.reachability import ReachabilitySummary, ReachabilityTarget
+
+
+TARGET = ReachabilityTarget(
+    name="dub1-to-lon1",
+    router="dub1",
+    source="10.100.0.1",
+    target="10.200.0.1",
+)
 
 
 class FakeController:
@@ -12,6 +21,17 @@ class FakeController:
 
     def restore(self, link_name):
         self.events.append(("restore", link_name))
+
+
+class FakeProbe:
+    def __init__(self, outcomes=None):
+        self.outcomes = list(outcomes or [True])
+        self.calls = 0
+
+    def sample(self, _):
+        value = self.outcomes[min(self.calls, len(self.outcomes) - 1)]
+        self.calls += 1
+        return value
 
 
 def healthy_wait():
@@ -26,6 +46,7 @@ def healthy_wait():
 
 def test_link_failure_restores_link_and_reports_recovery():
     controller = FakeController()
+    probe = FakeProbe([True, True])
     waits = [
         healthy_wait(),
         BaselineWait(healthy_wait().results, attempts=3, elapsed_seconds=2.0),
@@ -41,13 +62,16 @@ def test_link_failure_restores_link_and_reports_recovery():
         ),
     )
 
+    summary = ReachabilitySummary(TARGET, samples=5, successful=5)
+
     report = run_link_failure(
         "core1-dub1",
-        hold_seconds=0,
+        probe_target=TARGET,
         controller=controller,
+        probe=probe,
         wait_fn=wait_fn,
         collect_fn=lambda: during,
-        sleeper=lambda _: None,
+        sample_fn=lambda *args, **kwargs: summary,
     )
 
     assert controller.events == [
@@ -58,6 +82,8 @@ def test_link_failure_restores_link_and_reports_recovery():
     assert report.recovered is True
     assert report.recovery_attempts == 3
     assert report.recovery_seconds == 2.0
+    assert report.reachability.loss_percent == 0.0
+    assert report.reachable_after_recovery is True
 
 
 def test_unhealthy_baseline_refuses_to_inject_fault():
@@ -76,9 +102,28 @@ def test_unhealthy_baseline_refuses_to_inject_fault():
     try:
         run_link_failure(
             "core1-dub1",
+            probe_target=TARGET,
             controller=controller,
             wait_fn=lambda **_: unhealthy,
-            sleeper=lambda _: None,
+        )
+    except ExperimentPreconditionError:
+        pass
+    else:
+        raise AssertionError("expected ExperimentPreconditionError")
+
+    assert controller.events == []
+
+
+def test_unreachable_probe_refuses_to_inject_fault():
+    controller = FakeController()
+
+    try:
+        run_link_failure(
+            "core1-dub1",
+            probe_target=TARGET,
+            controller=controller,
+            probe=FakeProbe([False]),
+            wait_fn=lambda **_: healthy_wait(),
         )
     except ExperimentPreconditionError:
         pass
