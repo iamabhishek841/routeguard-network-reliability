@@ -70,7 +70,7 @@ def write_report(
             indent=2,
             sort_keys=True,
         )
-        + "\\n",
+        + "\n",
         encoding="utf-8",
     )
     return destination
