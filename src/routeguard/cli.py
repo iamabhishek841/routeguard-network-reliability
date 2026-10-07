@@ -10,6 +10,7 @@ from .faults import LAB_LINKS, FaultCommandError
 from .frr import FRRClient, FRRCommandError
 from .inventory import ROUTERS
 from .reachability import REACHABILITY_TARGETS, PingCommandError
+from .reporting import report_to_dict, write_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="reachability sampling interval while the link is down (default: 0.5)",
     )
     link_failure.add_argument("--json", action="store_true", dest="as_json")
+    link_failure.add_argument(
+        "--report",
+        metavar="PATH",
+        help="write a structured JSON report to PATH",
+    )
 
     return parser
 
@@ -189,22 +195,12 @@ def _experiment_link_failure(args: argparse.Namespace) -> int:
         interval_seconds=args.interval,
         probe_interval_seconds=args.probe_interval,
     )
-    payload = {
-        "link": report.link,
-        "hold_seconds": report.hold_seconds,
-        "failed_checks_during_fault": list(report.failed_checks_during_fault),
-        "recovered": report.recovered,
-        "recovery_attempts": report.recovery_attempts,
-        "recovery_seconds": report.recovery_seconds,
-        "reachability": {
-            "probe": report.reachability.target.name,
-            "samples": report.reachability.samples,
-            "successful": report.reachability.successful,
-            "failed": report.reachability.failed,
-            "loss_percent": report.reachability.loss_percent,
-            "reachable_after_recovery": report.reachable_after_recovery,
-        },
-    }
+    payload = report_to_dict(report)
+
+    if args.report:
+        written = write_report(report, args.report)
+    else:
+        written = None
 
     if args.as_json:
         print(json.dumps(payload, indent=2))
@@ -216,20 +212,31 @@ def _experiment_link_failure(args: argparse.Namespace) -> int:
         )
         recovery = "PASS" if report.recovered else "FAIL"
         print(f"link: {report.link}")
+        print(f"outcome: {report.outcome}")
         print(f"control-plane failures while down: {failures}")
         print(
             f"reachability during fault: "
             f"{report.reachability.successful}/{report.reachability.samples} successful "
             f"({report.reachability.loss_percent:.1f}% loss)"
         )
+        if report.reachability.first_failure_seconds is not None:
+            print(
+                "observed traffic failure window: "
+                f"{report.reachability.first_failure_seconds:.2f}s to "
+                f"{report.reachability.last_failure_seconds:.2f}s after fault sampling began"
+            )
+        else:
+            print("observed traffic failure window: none at the configured probe cadence")
         print(
             f"recovery: {recovery} after {report.recovery_attempts} checks "
             f"({report.recovery_seconds:.2f}s)"
         )
         post = "PASS" if report.reachable_after_recovery else "FAIL"
         print(f"reachability after recovery: {post}")
+        if written is not None:
+            print(f"report: {written}")
 
-    return 0 if report.recovered and report.reachable_after_recovery else 1
+    return 0 if report.outcome != "recovery-failed" else 1
 
 
 if __name__ == "__main__":
